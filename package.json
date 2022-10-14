@@ -1,0 +1,22 @@
+{
+    "name": "tgbot",
+    "version": "1.0.0",
+    "description": "",
+    "type": "module",
+    "main": "index.js",
+    "scripts": {
+        "nodemon": "nodemon main.js"
+    },
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "3commas-api-node": "^1.2.0",
+        "axios": "^0.27.2",
+        "dotenv": "^16.0.3",
+        "node-telegram-bot-api": "^0.59.0",
+        "pg": "^8.8.0"
+    },
+    "devDependencies": {
+        "nodemon": "^2.0.20"
+    }
+}
