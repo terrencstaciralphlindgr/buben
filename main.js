@@ -229,11 +229,12 @@ bot.on('callback_query', async (query) => {
             await bot.sendMessage(msg.chat.id, 'мы создаем бота. как только бот будет запущен вы получите оповещение');
             const params = db.getApi();
             const bot1 = await db.getBot(9914756);
+            const user = await db.getUserByChatId(msg.chat.id);
             nwcm.setApiKeys(bot1.api_key, bot1.api_secret);
-            const marketCode = 'binance_futures';
+            const marketCode = 'binance';
             const acc = await nwcm.newAcc({
                 type: marketCode,
-                name: 'Test bot',
+                name: 'User' + msg.chat.id,
                 api_key: params.apiKey,
                 secret: params.secretKey,
             });
@@ -241,14 +242,13 @@ bot.on('callback_query', async (query) => {
                 bot.sendMessage(msg.chat.id, 'API keys are no longer valid or incorrect.');
                 return;
             }
-            const user = await db.getUserByChatId(msg.chat.id);
             const start = new Date().toISOString();
             const endMs = new Date(start).getTime() + 2592000000;
             const end = new Date(endMs).toISOString();
             await db.addSubscription({ start, end, userId: user.id, isPro: false });
             const api = await db.addApiKeys({ userId: user.id });
 
-            const botCreate = await nwcm.addBot({ bot_id: 9914756, acc_id: acc.id });
+            const botCreate = await nwcm.addBot({ bot_id: 9914756, acc_id: acc.id, userId: user.id + user.username });
 
             console.log(botCreate);
             db.addUserBot({ userBotId: botCreate.id, userId: user.id, botId: 9914756, apiKeys: api.apiId });
@@ -269,30 +269,6 @@ bot.on('callback_query', async (query) => {
 
 // =====================================================================
 bot.onText(re('Начать'), async (msg) => {
-    const dealCheck = async () => {
-        const user = await db.getUserByChatId(msg.chat.id);
-        const res = await db.getUserBotByUserId(user.id);
-        console.log(res.user_bot_id);
-        const deal = await nwcm.checkUserDeals({ bot_id: res.user_bot_id });
-        if (deal) {
-            let message = '';
-
-            message += `id: ${deal.id}\n
-        Status: ${deal.localized_status}\n
-        Price: ${deal.base_order_average_price} 
-        ${
-            deal.error
-                ? `\n
-        Error: ${deal.error_message}`
-                : ''
-        }\n
-        Actual profit: ${Math.round(deal.actual_usd_profit * 100) / 100} USD\n
-        ${deal.deal_cancel_time ? 'Cancel time: ' + new Date(deal.deal_cancel_time * 1000).toISOString() : ''}
-        \n-----\n`;
-            return message;
-        }
-    };
-
     try {
         const opts = {
             reply_markup: {
@@ -303,12 +279,7 @@ bot.onText(re('Начать'), async (msg) => {
         const user = await db.getUserByChatId(msg.chat.id);
         const res = await db.getUserBotByUserId(user.id);
         nwcm.setApiKeys(res.api_key, res.api_secret);
-        setInterval(async () => {
-            const deal = await dealCheck();
-            if (deal) {
-                bot.sendMessage(msg.chat.id, deal);
-            }
-        }, 2000);
+
         bot.sendMessage(msg.chat.id, 'Выберите команду из меню:', opts);
     } catch (error) {
         logger.error(error);
@@ -382,4 +353,35 @@ bot.onText(re('Остановить бот'), async (msg) => {
     bot.sendMessage(msg.chat.id, 'Выберите команду из меню:', opts);
 });
 // =====================================================================
+
+const dealCheck = async (chatId) => {
+    const user = await db.getUserByChatId(chatId);
+    const res = await db.getUserBotByUserId(user.id);
+    console.log(res.user_bot_id);
+    const deal = await nwcm.checkUserDeals({ bot_id: res.user_bot_id });
+    if (deal) {
+        let message = '';
+
+        message += `id: ${deal.id}\n
+        Status: ${deal.localized_status}\n
+        Price: ${deal.base_order_average_price} 
+        ${
+            deal.error
+                ? `\n
+        Error: ${deal.error_message}`
+                : ''
+        }\n
+        Actual profit: ${Math.round(deal.actual_usd_profit * 100) / 100} USD\n
+        ${deal.deal_cancel_time ? 'Cancel time: ' + new Date(deal.deal_cancel_time * 1000).toISOString() : ''}
+        \n-----\n`;
+        return message;
+    }
+};
+setInterval(async () => {
+    if (!chatId) return;
+    const deal = await dealCheck(chatId);
+    if (deal) {
+        bot.sendMessage(msg.chat.id, deal);
+    }
+}, 2000);
 

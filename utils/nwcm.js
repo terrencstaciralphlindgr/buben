@@ -184,7 +184,7 @@ export default class nwcmBot extends threeCommas {
             const res = await this.api.botShow(params.bot_id);
             console.log(res);
             const data = {
-                name: res.name,
+                name: res.name + params.userId,
                 disable_after_deals_count: res.disable_after_deals_count,
                 account_id: params.acc_id,
                 pairs: JSON.stringify(res.pairs),
