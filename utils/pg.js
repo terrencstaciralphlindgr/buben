@@ -51,6 +51,17 @@ export default class DB {
     };
     // =====================================================================
     // =====================================================================
+    addUserEmail = async (params) => {
+        try {
+            const res = await this.query('UPDATE users SET email = $1 WHERE chat_id = $2', [params.email, params.chatId]);
+            return { message: 'Successfully added!' };
+        } catch (error) {
+            console.log(error);
+        }
+    };
+
+    // =====================================================================
+    // =====================================================================
     getUsers = async () => {
         try {
             const res = await this.query('SELECT * FROM users', []);
@@ -69,6 +80,7 @@ export default class DB {
             console.log(error);
         }
     };
+
     // =====================================================================
     // =====================================================================
     getUserById = async (id) => {
@@ -79,16 +91,7 @@ export default class DB {
             console.log(error);
         }
     };
-    // =====================================================================
-    // =====================================================================
-    addUserEmail = async (params) => {
-        try {
-            const res = await this.query('UPDATE users SET email = $1 WHERE chat_id = $2', [params.email, params.chatId]);
-            return { message: 'Successfully added!' };
-        } catch (error) {
-            console.log(error);
-        }
-    };
+
     // =====================================================================
     // =====================================================================
     addApiKeys = async (params) => {
@@ -104,9 +107,9 @@ export default class DB {
     };
     // =====================================================================
     // =====================================================================
-    getApiKeysByChatId = async (chatId) => {
+    getApiKeys = async (userId) => {
         try {
-            const res = await this.query('SELECT * FROM api_keys WHERE chat_id = $1', [chatId]);
+            const res = await this.query('SELECT * FROM api_keys WHERE user_id = $1', [userId]);
             return res.rows[0];
         } catch (error) {
             console.log(error);
@@ -127,12 +130,36 @@ export default class DB {
     };
     // =====================================================================
     // =====================================================================
+    getSubscription = async (userId) => {
+        try {
+            const res = await this.query('SELECT * FROM subscriptions WHERE user_id = $1', [userId]);
+            return res.rows[0];
+        } catch (error) {
+            console.log(error);
+        }
+    };
+    // =====================================================================
+    // =====================================================================
     addUserBot = async (params) => {
         try {
             const res = await this.query(
-                'INSERT INTO user_bots ("user_id", "bot_id", "api_keys","base_order") VALUES ($1, $2, $3, $4 )',
-                [params.userId, params.botId, params.apiKeys, params.baseOrder],
+                'INSERT INTO user_bots ("user_bot_id","user_id", "bot_id", "api_keys") VALUES ($1, $2, $3, $4)',
+                [params.userBotId, params.userId, params.botId, params.apiKeys],
             );
+            return { message: 'Successfully added!' };
+        } catch (error) {
+            console.log(error);
+        }
+    };
+    // =====================================================================
+    // =====================================================================
+    addActiveDeal = async (params) => {
+        try {
+            const res = await this.query('UPDATE user_bots SET active_deal = $1 WHERE user_id = $2', [
+                params.deal,
+                params.userId,
+            ]);
+
             return { message: 'Successfully added!' };
         } catch (error) {
             console.log(error);
@@ -153,12 +180,9 @@ export default class DB {
     };
     // =====================================================================
     // =====================================================================
-    addBot = async (params) => {
+    addStep = async (params) => {
         try {
-            const res = await this.query(
-                'INSERT INTO bots ("bot_id", "api_key","api_secret","name","account_id") VALUES ($1, $2, $3, $4, $5 )',
-                [params.botId, params.apiKey, params.apiSecret, params.name, params.accountId],
-            );
+            const res = await this.query('INSERT INTO steps ("user_id", "step") VALUES ($1, $2)', [params.userId, params.step]);
             return { message: 'Successfully added!' };
         } catch (error) {
             console.log(error);
@@ -166,5 +190,47 @@ export default class DB {
     };
     // =====================================================================
     // =====================================================================
+    addDeal = async (params) => {
+        try {
+            const res = await this.query('INSERT INTO deals ("deal_id", "user_id") VALUES ($1, $2) RETURNING deal_id', [
+                params.dealId,
+                params.userId,
+            ]);
+            return { message: 'Successfully added!' };
+        } catch (error) {
+            console.log(error);
+        }
+    };
+
+    // =====================================================================
+    // =====================================================================
+    getDeal = async (userId) => {
+        try {
+            const res = await this.query('SELECT * FROM deals WHERE user_id = $1', [userId]);
+            return res.rows[0];
+        } catch (error) {
+            console.log(error);
+        }
+    };
+    // =====================================================================
+    // =====================================================================
+    getExchange = async (exchangeId) => {
+        try {
+            const res = await this.query('SELECT * FROM exchanges WHERE exchange_id = $1', [exchangeId]);
+            return res.rows[0];
+        } catch (error) {
+            console.log(error);
+        }
+    };
+    // =====================================================================
+    // =====================================================================
+    getBot = async (botId) => {
+        try {
+            const res = await this.query('SELECT * FROM bots WHERE bot_id = $1', [botId]);
+            return res.rows[0];
+        } catch (error) {
+            console.log(error);
+        }
+    };
 }
 

@@ -5,7 +5,7 @@
     "type": "module",
     "main": "index.js",
     "scripts": {
-        "nodemon": "nodemon main.js"
+        "nodemon": "nodemon main.js | npx pino-pretty"
     },
     "author": "",
     "license": "ISC",
@@ -14,9 +14,12 @@
         "axios": "^0.27.2",
         "dotenv": "^16.0.3",
         "node-telegram-bot-api": "^0.59.0",
-        "pg": "^8.8.0"
+        "pg": "^8.8.0",
+        "pino": "^8.6.1",
+        "pino-multi-stream": "^6.0.0"
     },
     "devDependencies": {
-        "nodemon": "^2.0.20"
+        "nodemon": "^2.0.20",
+        "pino-pretty": "^9.1.1"
     }
 }
