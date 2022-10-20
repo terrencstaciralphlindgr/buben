@@ -1,144 +1,126 @@
-import threeCommasAPI from '3commas-api-node';
-import pino from 'pino';
-import pinoms from 'pino-multi-stream';
-import fs from 'fs';
-
-const streams = [{ stream: process.stdout }, { stream: fs.createWriteStream('./logs/tc.log', { flags: 'a' }) }];
-const logger = pino({ level: 'info' }, pinoms.multistream(streams));
+import stringify from 'qs-stringify';
+import fetch from 'node-fetch';
+import crypto from 'crypto';
+import * as dotenv from 'dotenv';
+dotenv.config();
 
 export default class threeCommas {
     constructor() {
-        this.api_key = 0;
-        this.api_secret = 0;
-        this.api = this.setApi(this.api_key, this.api_secret);
+        this._url = process.env.API_URL;
+        this._apiKey = process.env.API_KEY;
+        this._apiSecret = process.env.API_SECRET;
+        this._forcedMode = 'real';
     }
-    setApi(key, secret) {
-        this.api = new threeCommasAPI({
-            apiKey: key,
-            apiSecret: secret,
-        });
+
+    generateSignature(requestUri, reqData) {
+        const request = requestUri + reqData;
+        return crypto.createHmac('sha256', this._apiSecret).update(request).digest('hex');
     }
-    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    async stopDeal(deal_id) {
+
+    async makeRequest(method, path, params) {
+        if (!this._apiKey || !this._apiSecret) return new Error('missing api key or secret');
+        const sig = this.generateSignature(path, stringify(params));
         try {
-            await this.api.dealPanicSell(deal_id);
-        } catch (error) {
-            logger.error(error);
+            let response = await fetch(`${this._url}${path}${stringify(params)}`, {
+                method: method,
+                timeout: 30000,
+                agent: '',
+                headers: {
+                    APIKEY: this._apiKey,
+                    Signature: sig,
+                    'Forced-Mode': this._forcedMode,
+                },
+            });
+
+            return await response.json();
+        } catch (e) {
+            return false;
         }
     }
-    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    async checkDeals(params) {
-        try {
-            const deals = await this.api.getDeals(params);
-            return deals;
-        } catch (error) {
-            logger.error(error);
-        }
+    //////////////////////////////////////////////////////////////////////////////////////
+    async dealPanicSell(deal_id) {
+        return await this.makeRequest('POST', `/public/api/ver1/deals/${deal_id}/panic_sell?`, { deal_id });
     }
-    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    async statsBot(botId) {
-        try {
-            const stat = await this.botDealsStats(botId);
-            return {
-                profit: Math.round(stat.completed_deals_usd_profit * 100) / 100,
-            };
-        } catch (error) {
-            logger.error(error);
-        }
+    async getDeals(params) {
+        return await this.makeRequest('GET', '/public/api/ver1/deals?', params);
     }
-    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    async statusBot(bot_id) {
-        try {
-            const res = await this.api.botShow(bot_id);
-            return { enable: res.is_enabled, deal: res.active_deals };
-        } catch (error) {
-            logger.error(error);
-        }
+    async botCreate(params) {
+        return await this.makeRequest('POST', '/public/api/ver1/bots/create_bot?', params);
     }
-    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    async stopBot(bot_id) {
-        try {
-            await this.api.botDisable(bot_id);
-        } catch (error) {
-            logger.error(error);
-        }
+
+    async getBots(params) {
+        return await this.makeRequest('GET', `/public/api/ver1/bots?`, params);
     }
-    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    async startBot(bot_id, date) {
-        try {
-            const response = await this.api.botEnable(bot_id);
-        } catch (error) {
-            logger.error(error);
-        }
+
+    async getBotsStats(params) {
+        return await this.makeRequest('GET', `/public/api/ver1/bots/stats?`, params);
+    }
+
+    async botUpdate(params) {
+        return await this.makeRequest('PATCH', `/public/api/ver1/bots/${params.bot_id}/update?`, params);
+    }
+
+    async botDisable(bot_id) {
+        return await this.makeRequest('POST', `/public/api/ver1/bots/${bot_id}/disable?`, { bot_id });
+    }
+
+    async botEnable(bot_id) {
+        return await this.makeRequest('POST', `/public/api/ver1/bots/${bot_id}/enable?`, { bot_id });
+    }
+    async botDelete(bot_id) {
+        return await this.makeRequest('POST', `/public/api/ver1/bots/${bot_id}/delete?`, { bot_id });
+    }
+
+    async botPaniceSellAllDeals(bot_id) {
+        return await this.makeRequest('POST', `/public/api/ver1/bots/${bot_id}/panic_sell_all_deals?`, { bot_id });
     }
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     async botDealsStats(bot_id) {
-        try {
-            return await this.api.makeRequest('GET', `/public/api/ver1/bots/${bot_id}/deals_stats?`, {
-                bot_id,
-            });
-        } catch (error) {
-            logger.error(error);
-        }
+        return await this.makeRequest('GET', `/public/api/ver1/bots/${bot_id}/deals_stats?`, {
+            bot_id,
+        });
     }
-    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    async botCopy(params) {
-        try {
-            return await this.api.makeRequest('POST', `/public/api/ver1/bots/${params.bot_id}/copy_and_create?`, params);
-        } catch (error) {
-            logger.error(error);
-        }
+    async botShow(bot_id) {
+        return await this.makeRequest('GET', `/public/api/ver1/bots/${bot_id}/show?`, { bot_id });
     }
-    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     async getBotStatsByDate(params) {
-        try {
-            return await this.api.makeRequest('GET', `/public/api/ver1/bots/stats_by_date?`, params);
-        } catch (error) {
-            logger.error(error);
-        }
+        return await this.makeRequest('GET', `/public/api/ver1/bots/stats_by_date?`, params);
     }
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    async getAcc(params) {
-        try {
-            return await this.api.makeRequest('POST', `/public/api/ver1/accounts/${params.account_id}/load_balances?`, params);
-        } catch (error) {
-            logger.error(error);
-        }
+    async accountsLoadBalances(account_id) {
+        return await this.makeRequest('POST', `/public/api/ver1/accounts/${account_id}/load_balances?`, { account_id });
     }
-    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    async getAccTypes(params) {
-        try {
-            return await this.api.makeRequest('GET', `/public/api/ver1/accounts/types_to_connect?`, params);
-        } catch (error) {
-            logger.error(error);
-        }
+    async accountsTypes(params) {
+        return await this.makeRequest('GET', `/public/api/ver1/accounts/types_to_connect?`, params);
     }
-    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    async getBotOptions(bot_id) {
-        const obj = await this.api.botShow(bot_id);
-        return obj;
+    async accountsNew(params) {
+        return await this.makeRequest('POST', `/public/api/ver1/accounts/new?`, params);
     }
-    async changeBotOptions(options) {
-        const { api_key, api_secret, ...obj } = options;
-        console.log('update');
-        await this.api.botUpdate(obj);
+
+    async getAccounts() {
+        return await this.makeRequest('GET', `/public/api/ver1/accounts?`, null);
     }
-    async getBotsId() {
-        const bots = await this.api.getBots();
-        console.log('getBots');
-        return bots;
+
+    async accountsMarketList() {
+        return await this.makeRequest('GET', `/public/api/ver1/accounts/market_list?`, null);
+    }
+
+    async accountsCurrencyRates() {
+        return await this.makeRequest('GET', `/public/api/ver1/accounts/currency_rates?`, null);
+    }
+    async accountRemove(account_id) {
+        return await this.makeRequest('POST', `/public/api/ver1/accounts/${account_id}/remove?`, { account_id });
     }
 }
 
 const tc = new threeCommas();
-tc.setApi(
-    '61225ce12aa94961bdd11dc391f39d1b5bccbfeb05b14762ba59cc5aee52659b',
-    'f67da7b4e66b0de7eb7a4d7e8dfc8da8235b5f9edb37b3cd4d6beadc3aa51649100b59a2635d3f19a5d91517bf872a69428601fcb6a400bd3b0cb63a39337fe54202a9a260de419a1c5a4bf1485a3d680147c2b13acd67ef046d12e3ae67be4069853505',
-);
 
 // console.log(await tc.api.accountsNew({ type: 'binance', name: 'test', api_key: '131dda', secret: 'e21d2331' }));
-// console.log(await tc.api.accountRemove(32092880));
-// console.log(await tc.api.accounts());
+// console.log(await tc.accountRemove(32094619));
+
+// console.log(JSON.stringify(await tc.botShow(9921422)));
+// console.log(await tc.getAccounts());
+// console.log(await tc.getBots({ bot_id: 9917423 }));
 // console.log(await tc.api.botDelete(9914987));
 // console.log(await tc.getAcc({ account_id: 32083983 }));
 

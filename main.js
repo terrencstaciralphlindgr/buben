@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import * as dotenv from 'dotenv';
-import nwcmBot from './utils/nwcm.js';
+import bubenBot from './utils/buben.js';
 import messages from './utils/messages.js';
 import DB from './utils/pg.js';
 import keyboards from './utils/keyboards.js';
@@ -16,8 +16,8 @@ dotenv.config();
 const db = new DB();
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const supportBot = new TelegramBot(process.env.SUPPORT_BOT_TOKEN, { polling: true });
-const nwcm = new nwcmBot();
-
+const buben = new bubenBot();
+let chatId = 0;
 const re = (regex) => {
     return new RegExp('^' + regex + '$');
 };
@@ -56,12 +56,13 @@ const validateEmail = (email) => {
 bot.onText(re('/start'), async (msg) => {
     const chatId = msg.chat.id;
     const username = msg.chat.username;
-    const res = await db.addUser({ chatId, username });
+    const res = await buben.userNew(chatId, username);
 
-    if (res.error) {
+    if (!res) {
         await bot.sendMessage(chatId, 'Что-то пошло не так, обратитесь в поддержку {{ссылка на бот поддержки}}');
         return;
     }
+    console.log(res);
     const opts = {
         reply_markup: {
             keyboard: keyboards['/start'],
@@ -73,9 +74,6 @@ bot.onText(re('/start'), async (msg) => {
 // =====================================================================
 // =====================================================================
 bot.onText(re('Start'), async (msg) => {
-    const user = await db.getUserByChatId(msg.chat.id);
-    const apiKeys = await db.getApiKeys(user.id);
-    console.log(apiKeys);
     const opts = {
         reply_markup: {
             keyboard: keyboards['Start'],
@@ -87,6 +85,29 @@ bot.onText(re('Start'), async (msg) => {
 // =====================================================================
 // =====================================================================
 bot.onText(re('Начать торговлю'), async (msg) => {
+    const enterApiKeys = async () => {
+        const opts = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: 'Да', callback_data: '/exchange_yes' },
+                        { text: 'Нет', callback_data: '/exchange_no' },
+                    ],
+                ],
+            },
+        };
+        const opts2 = {
+            reply_markup: {
+                inline_keyboard: [[{ text: 'Trial', callback_data: '/trial' }]],
+            },
+        };
+        const apiKeys = await buben.userHasApiKeys(msg.chat.id);
+
+        !apiKeys.length
+            ? bot.sendMessage(msg.chat.id, messages['email'], opts)
+            : bot.sendMessage(msg.chat.id, messages['Выберите тариф'], opts2);
+    };
+
     const enterEmail = async (msg) => {
         const namePrompt = await bot.sendMessage(msg.chat.id, messages['Начать торговлю'], {
             reply_markup: {
@@ -95,29 +116,18 @@ bot.onText(re('Начать торговлю'), async (msg) => {
         });
         bot.onReplyToMessage(msg.chat.id, namePrompt.message_id, async (msg) => {
             const isEmail = validateEmail(msg.text);
-            console.log(msg.text);
-            const opts = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            { text: 'Да', callback_data: '/exchange_yes' },
-                            { text: 'Нет', callback_data: '/exchange_no' },
-                        ],
-                    ],
-                },
-            };
+
             if (isEmail) {
-                const res = await db.addUserEmail({ chatId: msg.chat.id, email: msg.text });
-                if (res.error)
-                    bot.sendMessage(msg.chat.id, 'Что-то пошло не так, обратитесь в поддержку {{ссылка на бот поддержки}}');
-                await bot.sendMessage(msg.chat.id, 'Email успешно добавлен!');
-                await bot.sendMessage(msg.chat.id, messages['email'], opts);
+                await db.addUserEmail({ id: msg.chat.id, email: msg.text });
+
+                bot.sendMessage(msg.chat.id, 'Email успешно добавлен!');
+                enterApiKeys();
             } else {
                 enterEmail(msg);
             }
         });
     };
-    enterEmail(msg);
+    (await buben.userHasEmail(msg.chat.id)) ? enterApiKeys() : enterEmail(msg);
 });
 // =====================================================================
 // =====================================================================
@@ -132,7 +142,7 @@ bot.on('callback_query', async (query) => {
             },
         });
         bot.onReplyToMessage(msg.chat.id, namePrompt.message_id, async (msg) => {
-            db.setApi({ apiKey: msg.text });
+            buben.setUserApiKeys({ apiKey: msg.text });
 
             const opts = {
                 reply_markup: {
@@ -145,26 +155,61 @@ bot.on('callback_query', async (query) => {
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     if (action === '/secret_key') {
+        const addUserApiKeys = async () => {
+            const apiKeys = buben.getUserApiKeys();
+            const exchange = await buben.getExchange(+apiKeys.exchangeId);
+            console.log(exchange);
+            const newAccount = await buben.newAccount({
+                type: exchange.market_code,
+                name: 'User' + msg.chat.id,
+                api_key: apiKeys.apiKey,
+                secret: apiKeys.secretKey,
+            });
+            console.log(newAccount);
+            if (newAccount.error) {
+                bot.sendMessage(
+                    msg.chat.id,
+                    newAccount.error_attributes.api_key[0] || 'API keys are no longer valid or incorrect.',
+                );
+                const opts = {
+                    reply_markup: {
+                        inline_keyboard: [[{ text: 'Ввести api key', callback_data: '/api_key' }]],
+                    },
+                };
+                bot.sendMessage(
+                    msg.chat.id,
+                    'Для подключения бота введите API-ключ для вашего аккаунта. Не забудьте дать разрешение ключу на торговлю. Подробную инструкцию по добавлению API-ключей смотрите здесь.',
+                    opts,
+                );
+                return false;
+            }
+            buben.userAddApiKeys({
+                user_id: msg.chat.id,
+                api_key: apiKeys.apiKey,
+                api_secret: apiKeys.secretKey,
+                exchange_id: exchange.exchange_id,
+                account_id: newAccount.id,
+                name: exchange.name + ' ' + apiKeys.apiKey.substring(0, 5),
+            });
+
+            return true;
+        };
+
         const namePrompt = await bot.sendMessage(msg.chat.id, messages['/secret_key'][0], {
             reply_markup: {
                 force_reply: true,
             },
         });
         bot.onReplyToMessage(msg.chat.id, namePrompt.message_id, async (msg) => {
-            db.setApi({ secretKey: msg.text });
+            buben.setUserApiKeys({ secretKey: msg.text });
 
             const opts = {
                 reply_markup: {
-                    inline_keyboard: [
-                        [
-                            { text: 'Trial', callback_data: '/trial' },
-                            { text: 'Pro', callback_data: '/pro' },
-                        ],
-                    ],
+                    inline_keyboard: [[{ text: 'Trial', callback_data: '/trial' }]],
                 },
             };
             await bot.sendMessage(msg.chat.id, messages['/secret_key'][1]);
-            await bot.sendMessage(msg.chat.id, messages['Выберите тариф'], opts);
+            (await addUserApiKeys()) ? await bot.sendMessage(msg.chat.id, messages['Выберите тариф'], opts) : false;
         });
     }
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -208,57 +253,74 @@ bot.on('callback_query', async (query) => {
     if (action.includes('/exchange|')) {
         const exchangeData = action.split('|')[1].trim();
         const [exchange, exchangeId] = exchangeData.split(':');
-        db.setApi({ exchangeId });
+        buben.setUserApiKeys({ exchangeId });
 
         const opts = {
             reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: 'Ввести api key', callback_data: '/api_key' },
-                        { text: 'Ввести api secret', callback_data: '/secret_key' },
-                    ],
-                ],
+                inline_keyboard: [[{ text: 'Ввести api key', callback_data: '/api_key' }]],
             },
         };
-        await bot.sendMessage(msg.chat.id, 'Для подключения бота введите API ключи вашего аккаунта', opts);
+        await bot.sendMessage(
+            msg.chat.id,
+            'Для подключения бота введите API-ключ для вашего аккаунта. Не забудьте дать разрешение ключу на торговлю. Подробную инструкцию по добавлению API-ключей смотрите здесь.',
+            opts,
+        );
+    }
+    if (action.includes('/bot|')) {
+        const selectedBotId = action.split('|')[1].trim();
+        buben.setUserApiKeys({ selectedBotId });
+
+        const apiKeys = await buben.userGetApiKeys(msg.chat.id);
+        if (apiKeys.length) {
+            const keyboard = [];
+            apiKeys.map((key) => {
+                keyboard.push([{ text: key.name, callback_data: `/api|${key.account_id}:${key.api_id}` }]);
+            });
+            const opts = {
+                reply_markup: {
+                    inline_keyboard: keyboard,
+                },
+            };
+            bot.sendMessage(msg.chat.id, 'У вас есть добавленные биржи, выберите из списка:', opts);
+        }
+    }
+    if (action.includes('/api|')) {
+        const account = action.split('|')[1].trim();
+        const [account_id, api_id] = account.split(':');
+        const bot_id = buben.getUserApiKeys().selectedBotId;
+        console.log(account_id, bot_id);
+        const { id: user_bot_id } = await buben.addBot({ bot_id, account_id, user_id: msg.chat.id });
+        const newBot = await buben.userAddBot({ user_bot_id, user_id: msg.chat.id, bot_id, api_keys: api_id });
+        const opts = {
+            reply_markup: {
+                keyboard: keyboards['Начать'],
+                resize_keyboard: true,
+            },
+        };
+        bot.sendMessage(msg.chat.id, 'Бот успешно добавлен!', opts);
     }
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     if (action.includes('/trial')) {
         try {
-            await bot.sendMessage(msg.chat.id, 'мы создаем бота. как только бот будет запущен вы получите оповещение');
-            const params = db.getApi();
-            const bot1 = await db.getBot(9914756);
-            const user = await db.getUserByChatId(msg.chat.id);
-            nwcm.setApiKeys(bot1.api_key, bot1.api_secret);
-            const marketCode = 'binance';
-            const acc = await nwcm.newAcc({
-                type: marketCode,
-                name: 'User' + msg.chat.id,
-                api_key: params.apiKey,
-                secret: params.secretKey,
-            });
-            if (acc.error) {
-                bot.sendMessage(msg.chat.id, 'API keys are no longer valid or incorrect.');
+            const res = await db.getUserBotByUserId(msg.chat.id);
+            if (res.length) {
+                const opts = {
+                    reply_markup: {
+                        keyboard: keyboards['Начать'],
+                        resize_keyboard: true,
+                    },
+                };
+                bot.sendMessage(msg.chat.id, 'У вас есть бот, нажмите начать, чтобы продолжить работу с ботом', opts);
                 return;
             }
-            const start = new Date().toISOString();
-            const endMs = new Date(start).getTime() + 2592000000;
-            const end = new Date(endMs).toISOString();
-            await db.addSubscription({ start, end, userId: user.id, isPro: false });
-            const api = await db.addApiKeys({ userId: user.id });
-
-            const botCreate = await nwcm.addBot({ bot_id: 9914756, acc_id: acc.id, userId: user.id + user.username });
-
-            console.log(botCreate);
-            db.addUserBot({ userBotId: botCreate.id, userId: user.id, botId: 9914756, apiKeys: api.apiId });
             const opts = {
                 reply_markup: {
-                    keyboard: keyboards['Начать'],
-                    resize_keyboard: true,
+                    inline_keyboard: [[{ text: 'Preset 2', callback_data: '/bot|9921197' }]],
                 },
             };
-            await bot.sendMessage(msg.chat.id, 'Бот создан', opts);
+            bot.sendMessage(msg.chat.id, 'Список ботов:\nPreset 2 classic (fast) BUSD/ETH.');
+            bot.sendMessage(msg.chat.id, 'Выберите бота', opts);
         } catch (error) {
             logger.error(error);
         }
@@ -269,6 +331,7 @@ bot.on('callback_query', async (query) => {
 
 // =====================================================================
 bot.onText(re('Начать'), async (msg) => {
+    chatId = msg.chat.id;
     try {
         const opts = {
             reply_markup: {
@@ -276,9 +339,7 @@ bot.onText(re('Начать'), async (msg) => {
                 resize_keyboard: true,
             },
         };
-        const user = await db.getUserByChatId(msg.chat.id);
-        const res = await db.getUserBotByUserId(user.id);
-        nwcm.setApiKeys(res.api_key, res.api_secret);
+        const res = await db.getUserBotByUserId(msg.chat.id);
 
         bot.sendMessage(msg.chat.id, 'Выберите команду из меню:', opts);
     } catch (error) {
@@ -294,10 +355,15 @@ bot.onText(re('Статистика'), async (msg) => {
             resize_keyboard: true,
         },
     };
-    const user = await db.getUserByChatId(msg.chat.id);
-    const res = await db.getUserBotByUserId(user.id);
-    const stat = await nwcm.statisticsSingleBot(res.user_bot_id);
-    bot.sendMessage(msg.chat.id, res.name + '\nProfit: ' + stat.profit + ' USD');
+    const res = await db.getUserBotByUserId(msg.chat.id);
+    const stat = await buben.getUserBotStat(res[0].user_bot_id);
+    bot.sendMessage(
+        msg.chat.id,
+        `*Статистика*\n${res[0].name}\n\nTotal profit: ${stat.profits_in_usd.overall_usd_profit} USDT\nDay profit: ${stat.profits_in_usd.today_usd_profit} USDT`,
+        {
+            parse_mode: 'Markdown',
+        },
+    );
     bot.sendMessage(msg.chat.id, 'Выберите команду из меню:', opts);
 });
 // =====================================================================
@@ -305,22 +371,20 @@ bot.onText(re('Статистика'), async (msg) => {
 // =====================================================================
 bot.onText(re('Статус'), async (msg) => {
     const opts = {
+        parse_mode: 'Markdown',
         reply_markup: {
             keyboard: keyboards['BOT'],
             resize_keyboard: true,
         },
     };
-    const user = await db.getUserByChatId(msg.chat.id);
-    const res = await db.getUserBotByUserId(user.id);
-    const status = await nwcm.statusSingleBot(res.user_bot_id);
-    let message = status.enable ? `${res.name} enabled ✅\n` : `${res.name} disabled ❌\n`;
-    message += status.deal[0]
-        ? `Deal: ✅\n id:${status.deal[0].id}\n profit:${Math.round(status.deal[0].actual_profit * 100) / 100} USD`
-        : `Deal: ❌\nnone`;
-    message += '\n-----\n';
+    const res = await db.getUserBotByUserId(msg.chat.id);
+    const status = await buben.getUserBotStatus(res[0].user_bot_id);
+    let message = status.is_enabled ? `*Статус* \n${res[0].name} включен ✅\n\n` : `*Статус* \n${res[0].name} выключен ❌\n\n`;
+    message += status.active_deals.length
+        ? `Сделка активна ✅\n\n Сумма в сделке:${status.active_deals_usd_profit} USDT\n\nСделок завершено: ${status.finished_deals_count}`
+        : `Нет активных сделок: ❌\n\nСделок завершено: ${status.finished_deals_count}`;
 
-    bot.sendMessage(msg.chat.id, message);
-    bot.sendMessage(msg.chat.id, 'Выберите команду из меню:', opts);
+    bot.sendMessage(msg.chat.id, message, opts);
 });
 // =====================================================================
 // =====================================================================
@@ -331,11 +395,9 @@ bot.onText(re('Запуск бота'), async (msg) => {
             resize_keyboard: true,
         },
     };
-    const user = await db.getUserByChatId(msg.chat.id);
-    const res = await db.getUserBotByUserId(user.id);
-    nwcm.startSingleBot(res.user_bot_id);
-
-    bot.sendMessage(msg.chat.id, 'БОТ запущен', opts);
+    const res = await db.getUserBotByUserId(msg.chat.id);
+    const start = await buben.startBot(res[0].user_bot_id);
+    bot.sendMessage(msg.chat.id, `${res[0].name} запущен`, opts);
 });
 // =====================================================================
 
@@ -346,34 +408,64 @@ bot.onText(re('Остановить бот'), async (msg) => {
             resize_keyboard: true,
         },
     };
-    const user = await db.getUserByChatId(msg.chat.id);
-    const res = await db.getUserBotByUserId(user.id);
-    nwcm.stopSingleBot(res.user_bot_id);
+    const res = await db.getUserBotByUserId(msg.chat.id);
+    buben.stopBot(res[0].user_bot_id);
 
-    bot.sendMessage(msg.chat.id, 'Выберите команду из меню:', opts);
+    bot.sendMessage(msg.chat.id, `${res[0].name} остановлен`, opts);
+});
+// =====================================================================
+bot.onText(re('Изменить депозит'), async (msg) => {
+    const namePrompt = await bot.sendMessage(msg.chat.id, 'Введите сумму депозита:', {
+        reply_markup: {
+            force_reply: true,
+        },
+    });
+    bot.onReplyToMessage(msg.chat.id, namePrompt.message_id, async (msg) => {
+        const dep = msg.text;
+        const res = await db.getUserBotByUserId(msg.chat.id);
+        const bots = await db.getBot(res[0].bot_id);
+        const { base_ratio, safety_ratio } = bots;
+        const base_order_volume = +base_ratio * dep;
+        const safety_order_volume = +safety_ratio * dep;
+        const opts = {
+            reply_markup: {
+                keyboard: keyboards['BOT'],
+                resize_keyboard: true,
+            },
+        };
+        const updatedBot = await buben.editBot({ bot_id: res[0].bot_id, safety_order_volume, base_order_volume });
+        if (updatedBot.error) {
+            bot.sendMessage(msg.chat.id, 'Минимальный депозит 360 USDT!', opts);
+            return;
+        }
+
+        bot.sendMessage(msg.chat.id, 'Депозит успешно изменен!', opts);
+        // const opts = {
+        //     reply_markup: {
+        //         inline_keyboard: [[{ text: 'Trial', callback_data: '/trial' }]],
+        //     },
+        // };
+        // await bot.sendMessage(msg.chat.id, messages['/secret_key'][1]);
+        // (await addUserApiKeys()) ? await bot.sendMessage(msg.chat.id, messages['Выберите тариф'], opts) : false;
+    });
 });
 // =====================================================================
 
 const dealCheck = async (chatId) => {
-    const user = await db.getUserByChatId(chatId);
-    const res = await db.getUserBotByUserId(user.id);
-    console.log(res.user_bot_id);
-    const deal = await nwcm.checkUserDeals({ bot_id: res.user_bot_id });
+    const res = await db.getUserBotByUserId(chatId);
+    const deal = await buben.userCheckDeals({ bot_id: res[0].user_bot_id });
     if (deal) {
         let message = '';
 
-        message += `id: ${deal.id}\n
-        Status: ${deal.localized_status}\n
-        Price: ${deal.base_order_average_price} 
-        ${
+        message += `${res[0].name} обновил статус сделки\nStatus: ${deal.localized_status}${
+            deal.base_order_average_price ? '\nPrice: ' + deal.base_order_average_price : ''
+        }${
             deal.error
-                ? `\n
-        Error: ${deal.error_message}`
-                : ''
-        }\n
-        Actual profit: ${Math.round(deal.actual_usd_profit * 100) / 100} USD\n
-        ${deal.deal_cancel_time ? 'Cancel time: ' + new Date(deal.deal_cancel_time * 1000).toISOString() : ''}
-        \n-----\n`;
+                ? `\nError: ${deal.error_message} `
+                : `\nActual profit: ${Math.round(deal.actual_usd_profit * 100) / 100} USD\n${
+                      deal.deal_cancel_time ? 'Cancel time: ' + new Date(deal.deal_cancel_time * 1000).toISOString() : ''
+                  }`
+        }`;
         return message;
     }
 };
@@ -381,7 +473,7 @@ setInterval(async () => {
     if (!chatId) return;
     const deal = await dealCheck(chatId);
     if (deal) {
-        bot.sendMessage(msg.chat.id, deal);
+        bot.sendMessage(chatId, deal);
     }
 }, 2000);
 

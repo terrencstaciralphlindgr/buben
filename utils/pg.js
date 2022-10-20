@@ -25,25 +25,19 @@ export default class DB {
     query = (text, params) => this.pool.query(text, params);
     // =====================================================================
     // =====================================================================
-    setApi = (obj) => {
-        this.apiKey = obj.apiKey || this.apiKey;
-        this.secretKey = obj.secretKey || this.secretKey;
-        this.exchangeId = obj.exchangeId || this.exchangeId;
-        this.baseOrder = obj.baseOrder || this.baseOrder;
-    };
+
     // =====================================================================
     // =====================================================================
-    getApi = () => {
-        return { apiKey: this.apiKey, secretKey: this.secretKey, exchangeId: this.exchangeId, baseOrder: this.baseOrder };
-    };
+
     // =====================================================================
     // =====================================================================
     addUser = async (params) => {
         try {
-            const res = await this.getUserByChatId(params.chatId);
-            if (res) return { message: 'Already exist!', error: false };
-            await this.query('INSERT INTO users ("chat_id", "username") VALUES ($1, $2)', [params.chatId, params.username]);
-            return { message: 'Successfully added!', error: false };
+            const res = await this.query('INSERT INTO users ("id", "username") VALUES ($1, $2) RETURNING id', [
+                params.id,
+                params.username,
+            ]);
+            return res.rows[0].id;
         } catch (error) {
             console.log(error);
             return { message: 'Error', error: true };
@@ -53,8 +47,7 @@ export default class DB {
     // =====================================================================
     addUserEmail = async (params) => {
         try {
-            const res = await this.query('UPDATE users SET email = $1 WHERE chat_id = $2', [params.email, params.chatId]);
-            return { message: 'Successfully added!' };
+            await this.query('UPDATE users SET email = $1 WHERE id = $2', [params.email, params.id]);
         } catch (error) {
             console.log(error);
         }
@@ -72,9 +65,9 @@ export default class DB {
     };
     // =====================================================================
     // =====================================================================
-    getUserByChatId = async (chatId) => {
+    getUser = async (id) => {
         try {
-            const res = await this.query('SELECT * FROM users WHERE chat_id = $1', [chatId]);
+            const res = await this.query('SELECT * FROM users WHERE id = $1', [id]);
             return res.rows[0];
         } catch (error) {
             console.log(error);
@@ -97,8 +90,8 @@ export default class DB {
     addApiKeys = async (params) => {
         try {
             const res = await this.query(
-                'INSERT INTO api_keys ("user_id", "api_key", "api_secret", "exchange_id") VALUES ($1, $2, $3, $4) RETURNING api_id',
-                [params.userId, this.apiKey, this.secretKey, this.exchangeId],
+                'INSERT INTO api_keys ("user_id", "api_key", "api_secret", "exchange_id","account_id","name") VALUES ($1, $2, $3, $4, $5, $6) RETURNING api_id',
+                [params.user_id, params.api_key, params.api_secret, params.exchange_id, params.account_id, params.name],
             );
             return { apiId: res.rows[0].api_id };
         } catch (error) {
@@ -107,10 +100,10 @@ export default class DB {
     };
     // =====================================================================
     // =====================================================================
-    getApiKeys = async (userId) => {
+    getApiKeysByUserId = async (id) => {
         try {
-            const res = await this.query('SELECT * FROM api_keys WHERE user_id = $1', [userId]);
-            return res.rows[0];
+            const res = await this.query('SELECT * FROM api_keys WHERE user_id = $1', [id]);
+            return res.rows;
         } catch (error) {
             console.log(error);
         }
@@ -144,7 +137,7 @@ export default class DB {
         try {
             const res = await this.query(
                 'INSERT INTO user_bots ("user_bot_id","user_id", "bot_id", "api_keys") VALUES ($1, $2, $3, $4)',
-                [params.userBotId, params.userId, params.botId, params.apiKeys],
+                [params.user_bot_id, params.user_id, params.bot_id, params.api_keys],
             );
             return { message: 'Successfully added!' };
         } catch (error) {
@@ -173,7 +166,7 @@ export default class DB {
                 'SELECT user_bots.user_bot_id,user_bots.bot_id,bots.api_key,bots.api_secret,bots.name FROM user_bots LEFT JOIN bots ON bots.bot_id = user_bots.bot_id WHERE user_bots.user_id = $1 ',
                 [userId],
             );
-            return res.rows[0];
+            return res.rows;
         } catch (error) {
             console.log(error);
         }
@@ -214,9 +207,9 @@ export default class DB {
     };
     // =====================================================================
     // =====================================================================
-    getExchange = async (exchangeId) => {
+    getExchange = async (id) => {
         try {
-            const res = await this.query('SELECT * FROM exchanges WHERE exchange_id = $1', [exchangeId]);
+            const res = await this.query('SELECT * FROM exchanges WHERE exchange_id = $1', [id]);
             return res.rows[0];
         } catch (error) {
             console.log(error);
