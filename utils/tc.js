@@ -116,11 +116,11 @@ export default class threeCommas {
 const tc = new threeCommas();
 
 // console.log(await tc.api.accountsNew({ type: 'binance', name: 'test', api_key: '131dda', secret: 'e21d2331' }));
-// console.log(await tc.accountRemove(32094619));
+// console.log(await tc.accountRemove(32094645));
 
-// console.log(JSON.stringify(await tc.botShow(9921422)));
+// console.log(JSON.stringify(await tc.botShow(9921197)));
 // console.log(await tc.getAccounts());
-// console.log(await tc.getBots({ bot_id: 9917423 }));
+// console.log(await tc.getBots({}));
 // console.log(await tc.api.botDelete(9914987));
 // console.log(await tc.getAcc({ account_id: 32083983 }));
 

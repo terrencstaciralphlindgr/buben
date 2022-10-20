@@ -157,6 +157,7 @@ export default class bubenBot extends threeCommas {
     async addBot(params) {
         try {
             const res = await this.botShow(params.bot_id);
+            console.log(res);
             const data = {
                 name: res.name + params.user_id,
                 disable_after_deals_count: res.disable_after_deals_count,
@@ -206,26 +207,23 @@ export default class bubenBot extends threeCommas {
             const res = await this.botShow(params.bot_id);
             const data = {
                 name: res.name,
-                disable_after_deals_count: res.disable_after_deals_count,
-                account_id: res.account_id,
                 pairs: JSON.stringify(res.pairs),
                 max_active_deals: res.max_active_deals,
                 base_order_volume: params.base_order_volume,
                 base_order_volume_type: res.base_order_volume_type,
-                take_profit: res.take_profit,
+                take_profit: +res.take_profit,
                 safety_order_volume: params.safety_order_volume,
                 safety_order_volume_type: res.safety_order_volume_type,
-                martingale_volume_coefficient: res.martingale_volume_coefficient,
-                martingale_step_coefficient: res.martingale_step_coefficient,
+                martingale_volume_coefficient: +res.martingale_volume_coefficient,
+                martingale_step_coefficient: +res.martingale_step_coefficient,
                 max_safety_orders: res.max_safety_orders,
                 active_safety_orders_count: res.active_safety_orders_count,
-                stop_loss_percentage: res.stop_loss_percentage,
-                cooldown: res.cooldown,
+                stop_loss_percentage: +res.stop_loss_percentage,
+                cooldown: +res.cooldown,
                 trailing_enabled: res.trailing_enabled,
-                trailing_deviation: res.trailing_deviation,
-                btc_price_limit: res.btc_price_limit,
-                strategy: res.strategy,
-                safety_order_step_percentage: res.safety_order_step_percentage,
+                trailing_deviation: +res.trailing_deviation,
+                btc_price_limit: +res.btc_price_limit,
+                safety_order_step_percentage: +res.safety_order_step_percentage,
                 take_profit_type: res.take_profit_type,
                 strategy_list: JSON.stringify(res.strategy_list),
                 leverage_type: res.leverage_type,
@@ -240,8 +238,11 @@ export default class bubenBot extends threeCommas {
                 profit_currency: res.profit_currency,
                 start_order_type: res.start_order_type,
                 stop_loss_type: res.stop_loss_type,
+                disable_after_deals_count: res.disable_after_deals_count,
                 allowed_deals_on_same_pair: res.allowed_deals_on_same_pair,
                 close_deals_timeout: res.close_deals_timeout,
+                bot_id: res.id,
+                account_id: res.account_id,
             };
             return await this.botCreate(data);
         } catch (error) {

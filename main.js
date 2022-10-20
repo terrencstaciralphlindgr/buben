@@ -289,8 +289,9 @@ bot.on('callback_query', async (query) => {
         const [account_id, api_id] = account.split(':');
         const bot_id = buben.getUserApiKeys().selectedBotId;
         console.log(account_id, bot_id);
-        const { id: user_bot_id } = await buben.addBot({ bot_id, account_id, user_id: msg.chat.id });
-        const newBot = await buben.userAddBot({ user_bot_id, user_id: msg.chat.id, bot_id, api_keys: api_id });
+        const bot3com = await buben.addBot({ bot_id, account_id, user_id: msg.chat.id });
+        console.log(bot3com);
+        const newBot = await buben.userAddBot({ user_bot_id: bot3com.id, user_id: msg.chat.id, bot_id, api_keys: api_id });
         const opts = {
             reply_markup: {
                 keyboard: keyboards['Начать'],
@@ -425,15 +426,15 @@ bot.onText(re('Изменить депозит'), async (msg) => {
         const res = await db.getUserBotByUserId(msg.chat.id);
         const bots = await db.getBot(res[0].bot_id);
         const { base_ratio, safety_ratio } = bots;
-        const base_order_volume = +base_ratio * dep;
-        const safety_order_volume = +safety_ratio * dep;
+        const base_order_volume = Math.round(+base_ratio * dep * 100) / 100;
+        const safety_order_volume = Math.round(+safety_ratio * dep * 100) / 100;
         const opts = {
             reply_markup: {
                 keyboard: keyboards['BOT'],
                 resize_keyboard: true,
             },
         };
-        const updatedBot = await buben.editBot({ bot_id: res[0].bot_id, safety_order_volume, base_order_volume });
+        const updatedBot = await buben.editBot({ bot_id: res[0].user_bot_id, safety_order_volume, base_order_volume });
         if (updatedBot.error) {
             bot.sendMessage(msg.chat.id, 'Минимальный депозит 360 USDT!', opts);
             return;
